@@ -242,6 +242,21 @@ uint32_t big_mult_word(uint32_t* x,
   return carry;
 }
 
+// x = a^n, where a, n are both single words
+uint32_t big_pow_word(uint32_t* x, 
+                      uint32_t a, 
+                      uint32_t n, 
+                      int w)
+{
+  big_init_word(x, 1, w);
+  if (n == 0) return 0;
+  for (uint32_t i = 0; i < n; i++) {
+    const uint32_t c = big_mult_word(x, a, w);
+    if (c != 0) return c;
+  }
+  return 0;
+}
+
 // x += y + a
 uint32_t big_add_big(uint32_t* x, 
                      const uint32_t* y, 
@@ -497,15 +512,68 @@ uint32_t big_nchoosek(uint32_t* x,
   return 0;
 }
 
+// Stirling number S(n, k) = number of ways to partition n objects into k sets
+// Naively use the explicit summation formula
+uint32_t big_stirling(uint32_t* x, 
+                      uint32_t n, 
+                      uint32_t k, 
+                      int w) 
+{
+  if (k > n) {
+    big_init_word(x, 0, w);
+    return 1; 
+  }
+  if (n == k) {
+    big_init_word(x, 1, w);
+    return 0;
+  }
+  uint32_t y[w];
+  uint32_t z[w];
+  uint32_t psum[w];
+  uint32_t nsum[w];
+  big_init_word(psum, 0, w);
+  big_init_word(nsum, 0, w);
+  for (uint32_t i = 0; i <= k; i++) {
+    // compute nck(k, i) * (k - i)^n
+    uint32_t c = big_pow_word(y, k - i, n, w);
+    if (c != 0) return c;
+    c = big_nchoosek(z, k, i, w);
+    if (c != 0) return c;
+    if ((i & 0x01) == 0x00) { // psum += y * z
+      c = big_mult_big(psum, y, z, true, w);
+    } else { // nsum += y * z
+      c = big_mult_big(nsum, y, z, true, w);
+    }
+    if (c != 0) return c;
+  }
+  // finalize with (pos - neg) / k!
+  big_sub_big(psum, nsum, w);
+  big_factorial(y, k, w);
+  return big_div_big(x, z, psum, y, w);
+}
+
+// Count all possible partitions of a set of n objects = sum of all Stirling numbers
+uint32_t big_bell(uint32_t* x, uint32_t n, int w) {
+  uint32_t snk[w];
+  big_init_word(x, 0, w);
+  for (uint32_t k = 0; k <= n; k++) {
+    uint32_t c = big_stirling(snk, n, k, w);
+    if (c != 0) return c;
+    c = big_add_big(x, snk, 0, w);
+    if (c != 0) return c;
+  }
+  return 0;
+}
+
 // https://en.wikipedia.org/wiki/Euclidean_algorithm
-void big_gcd(uint32_t* x,
-             const uint32_t* a,
-             const uint32_t* b,
-             int w)
+uint32_t big_gcd(uint32_t* x,
+                 const uint32_t* a,
+                 const uint32_t* b,
+                 int w)
 {
   if (big_is_equal(a, b, w)) {
     big_init_big(x, a, w);
-    return;
+    return 0;
   }
   uint32_t A[w];
   uint32_t B[w];
@@ -525,20 +593,21 @@ void big_gcd(uint32_t* x,
     big_init_big(B, R, w);
   }
   big_init_big(x, A, w);
+  return 0;
 }
 
 // least common multiple x = lcm(a, b) = (a * b) / gcd(a, b)
-void big_lcm(uint32_t* x,
-             const uint32_t* a,
-             const uint32_t* b,
-             int w)
+uint32_t big_lcm(uint32_t* x,
+                 const uint32_t* a,
+                 const uint32_t* b,
+                 int w)
 {
   uint32_t gcdab[w];
   uint32_t ab[w];
   uint32_t rem[w];
   big_gcd(gcdab, a, b, w);
   big_mult_big(ab, a, b, false, w);
-  big_div_big(x, rem, ab, gcdab, w);
+  return big_div_big(x, rem, ab, gcdab, w);
 }
 
 void big_isqrt(uint32_t* y,
